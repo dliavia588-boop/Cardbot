@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Коллекция карт</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      --bg: #15050b;            /* Глубокий тёмно-бордовый фон */
+      --card-bg: #240813;       /* Фон подложки карточки */
+      --card-border: rgba(212, 175, 55, 0.25); /* Тонкая золотистая рамка */
+      --accent-gold: #e2b96f;   /* Тёплое золото */
+      --text: #f5e8eb;          /* Светлый кремовый текст */
+      --text-muted: #af8d96;    /* Приглушённый цвет для подсказок */
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      -webkit-tap-highlight-color: transparent;
+      min-height: 100vh;
+    }
+
+    /* Верхний блок: прогресс-бар */
+    .progress-box {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      padding: 14px 16px;
+      border-radius: 16px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    }
+
+    .progress-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 8px;
+    }
+
+    .counter {
+      color: var(--accent-gold);
+      font-weight: 700;
+      font-feature-settings: "tnum";
+    }
+
+    .progress-track {
+      height: 8px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #8a1538, var(--accent-gold));
+      width: 0%;
+      border-radius: 4px;
+      transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* Сетка карт 2 в ряд */
+    .gallery {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px;
+      padding-bottom: 24px;
+    }
+
+    /* Карточка */
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+      cursor: pointer;
+      transition: transform 0.15s ease, border-color 0.2s ease;
+    }
+
+    .card:active {
+      transform: scale(0.97);
+    }
+
+    .card.unlocked {
+      border-color: rgba(226, 185, 111, 0.45);
+    }
+
+    /* Область изображения */
+    .image-container {
+      position: relative;
+      width: 100%;
+      padding-top: 140%; /* Пропорции карточки (высокая) */
+      overflow: hidden;
+      background: #0d0206;
+    }
+
+    .card img {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transition: filter 0.3s ease;
+    }
+
+    /* Стили закрытой карты: обесцвечивание и затемнение */
+    .card.locked img {
+      filter: grayscale(100%) brightness(0.25) contrast(1.1);
+    }
+
+    /* Вуаль поверх закрытой карты: замок + текст задания */
+    .card-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(18, 4, 9, 0.72);
+      backdrop-filter: blur(2px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 12px;
+      text-align: center;
+    }
+
+    .lock-badge {
+      font-size: 26px;
+      margin-bottom: 8px;
+      filter: drop-shadow(0 2px 6px rgba(0,0,0,0.8));
+    }
+
+    .overlay-task {
+      font-size: 11px;
+      line-height: 1.35;
+      color: #ffd6df;
+      font-weight: 500;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.9);
+      display: -webkit-box;
+      -webkit-line-clamp: 4;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    /* Блок с названием строго под картой */
+    .card-caption {
+      padding: 10px 8px;
+      text-align: center;
+    }
+
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--text);
+    }
+
+    .card.unlocked .card-title {
+      color: var(--accent-gold);
+    }
+
+    /* Всплывающее окно (просмотр на весь экран) */
+    .modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(9, 1, 4, 0.88);
+      backdrop-filter: blur(10px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+      z-index: 1000;
+      padding: 20px;
+    }
+
+    .modal.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .modal-content {
+      background: var(--card-bg);
+      border: 1px solid var(--accent-gold);
+      border-radius: 20px;
+      width: 100%;
+      max-width: 330px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
+      transform: scale(0.92);
+      transition: transform 0.25s ease;
+    }
+
+    .modal.active .modal-content {
+      transform: scale(1);
+    }
+
+    .modal-img-wrap {
+      width: 100%;
+      padding-top: 135%;
+      position: relative;
+      background: #000;
+    }
+
+    .modal-img-wrap img {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+    }
+
+    .modal-info {
+      padding: 16px;
+      text-align: center;
+    }
+
+    .modal-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--accent-gold);
+      margin-bottom: 8px;
+    }
+
+    .modal-status {
+      font-size: 13px;
+      line-height: 1.4;
+      color: var(--text-muted);
+    }
+
+    .modal-status.unlocked-text {
+      color: #4cd964;
+      font-weight: 600;
+    }
+
+    .close-btn {
+      margin-top: 14px;
+      background: rgba(255, 255, 255, 0.1);
+      border: none;
+      color: var(--text);
+      padding: 10px 20px;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      width: 100%;
+    }
+
+    .loading-state {
+      text-align: center;
+      padding: 40px 0;
+      color: var(--text-muted);
+      grid-column: span 2;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Блок прогресса -->
+  <div class="progress-box">
+    <div class="progress-header">
+      <span>Собрано карт</span>
+      <span id="counter" class="counter">0 / 0</span>
+    </div>
+    <div class="progress-track">
+      <div id="progress-fill" class="progress-fill"></div>
+    </div>
+  </div>
+
+  <!-- Галерея -->
+  <div id="gallery" class="gallery">
+    <div class="loading-state">Загрузка коллекции...</div>
+  </div>
+
+  <!-- Модальное окно увеличения карты -->
+  <div id="modal" class="modal" onclick="closeModal()">
+    <div class="modal-content" onclick="event.stopPropagation()">
+      <div class="modal-img-wrap">
+        <img id="modal-img" src="" alt="">
+      </div>
+      <div class="modal-info">
+        <div id="modal-title" class="modal-title"></div>
+        <div id="modal-desc" class="modal-status"></div>
+        <button class="close-btn" onclick="closeModal()">Закрыть</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+    tg.expand();
+
+    // ВСТАВЬТЕ СЮДА ВАШ URL ИЗ GOOGLE APPS SCRIPT (/exec)
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyL6bI51K4K3apNcUgcyuYwi__twUQqdD9FWc8peJQe1dWpu5L2PQH3DTGt0jK_y067VQ/exec";
+
+    let allCards = [];
+
+    async function init() {
+      const user = tg.initDataUnsafe?.user;
+      const userId = user?.id || "test_user_id";
+      const userName = user?.username ? `@${user.username}` : (user?.first_name || "Игрок");
+
+      try {
+        const response = await fetch(`${SCRIPT_URL}?userId=${userId}&userName=${encodeURIComponent(userName)}`);
+        allCards = await response.json();
+        renderGallery(allCards);
+      } catch (e) {
+        document.getElementById("gallery").innerHTML = `
+          <div class="loading-state">Не удалось загрузить карты.<br>Попробуйте обновить страницу.</div>
+        `;
+      }
+    }
+
+    function renderGallery(cards) {
+      const gallery = document.getElementById("gallery");
+      gallery.innerHTML = "";
+
+      // Автоматический подсчет на основе пришедших данных из таблицы
+      const totalCards = cards.length;
+      const unlockedCards = cards.filter(c => c.unlocked).length;
+
+      // Обновляем шкалу прогресса
+      document.getElementById("counter").innerText = `${unlockedCards} / ${totalCards}`;
+      const percentage = totalCards > 0 ? (unlockedCards / totalCards) * 100 : 0;
+      document.getElementById("progress-fill").style.width = `${percentage}%`;
+
+      // Отрисовка карточек
+      cards.forEach((card, index) => {
+        const cardEl = document.createElement("div");
+        cardEl.className = `card ${card.unlocked ? "unlocked" : "locked"}`;
+        cardEl.onclick = () => openModal(index);
+
+        cardEl.innerHTML = `
+          <div class="image-container">
+            <img src="${card.img}" alt="${card.name}" loading="lazy">
+            ${!card.unlocked ? `
+              <div class="card-overlay">
+                <div class="lock-badge">🔒</div>
+                <div class="overlay-task">${card.task}</div>
+              </div>
+            ` : ''}
+          </div>
+          <div class="card-caption">
+            <div class="card-title">${card.name}</div>
+          </div>
+        `;
+
+        gallery.appendChild(cardEl);
+      });
+    }
+
+    // Логика модального окна
+    function openModal(index) {
+      const card = allCards[index];
+      const modal = document.getElementById("modal");
+      const modalImg = document.getElementById("modal-img");
+      const modalTitle = document.getElementById("modal-title");
+      const modalDesc = document.getElementById("modal-desc");
+
+      modalImg.src = card.img;
+      // Если карта закрыта, в модалке она тоже остаётся ч/б и с затемнением
+      modalImg.style.filter = card.unlocked ? "none" : "grayscale(100%) brightness(0.4)";
+      
+      modalTitle.innerText = card.name;
+
+      if (card.unlocked) {
+        modalDesc.className = "modal-status unlocked-text";
+        modalDesc.innerHTML = "✓ Открыта в вашей коллекции";
+      } else {
+        modalDesc.className = "modal-status";
+        modalDesc.innerHTML = `<strong>Задание:</strong><br>${card.task}`;
+      }
+
+      modal.classList.add("active");
+
+      // Нативная кнопка "Назад" в левом верхнем углу Telegram
+      if (tg.BackButton) {
+        tg.BackButton.show();
+        tg.BackButton.onClick(closeModal);
+      }
+    }
+
+    function closeModal() {
+      const modal = document.getElementById("modal");
+      modal.classList.remove("active");
+      if (tg.BackButton) {
+        tg.BackButton.hide();
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>
